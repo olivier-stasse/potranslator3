@@ -2,7 +2,7 @@
 
 """Main module."""
 
-from os import listdir, makedirs
+from os import listdir, makedirs, scandir
 from os.path import isfile, join, exists
 from . import polib, Translator, json
 from . import SUPPORTED_LANGUAGES, __version__
@@ -145,8 +145,14 @@ class PoTranslator:
 
         for target_lang in target_langs:
             po_file_name = filename.split('/')[-1].split('\\')[-1][:-1]
-            po_path = join(self.locale_dir, '/'.join((target_lang, 'LC_MESSAGES', po_file_name)))
-            po_dir = join(self.locale_dir, '/'.join((target_lang, 'LC_MESSAGES')))
+            print("filename:",filename)
+            print("po_file_name:",po_file_name)
+            # Find subdir which is after self.pot_dir and without po_file_name
+            # + prefix '/' + postfix 't' because we started from a '.pot' file
+            subdir_name=filename[len('build/gettext')+1:len(filename)-len(po_file_name)-2]
+            print("subdir_name ",subdir_name)
+            po_path = join(self.locale_dir, '/'.join((target_lang, 'LC_MESSAGES', subdir_name,po_file_name)))
+            po_dir = join(self.locale_dir,  '/'.join((target_lang, 'LC_MESSAGES', subdir_name)))
             if not isfile(po_path):
                 if not exists(po_dir):
                     makedirs(po_dir)
@@ -161,6 +167,43 @@ class PoTranslator:
             else:
                 status['not_changed'] +=1
                 click.echo('Not Changed: {0}'.format(po_file_name))
+        return results
+
+    def translate_dir_pot(self, local_dir, target_langs, src_lang='auto', encoding='utf-8', auto_save=False, compiled=False):
+        """
+        Translates all the pot files in the pot folder in the specified target languages.
+
+        :param target_langs: sequence of strings.
+            Target language for translation.
+        :param src_lang: string.
+            Source language for translation.
+        :param encoding: string.
+            Encoding for saving the po files.
+        :param auto_save: bool.
+            Toggles auto save feature.
+        :param compiled: bool.
+            Toggles compilation to mo files.
+        :return: Dictionary.
+            A dictionary of po files.
+        """
+        results = {}
+
+        with scandir(local_dir) as it:
+            for entry in it:
+                if entry.is_dir():
+                    results.update(self.translate_dir_pot(join(local_dir,entry.name),target_langs,src_lang,encoding,auto_save,compiled))
+
+        pot_files = [file for file in listdir(local_dir) if file.endswith('.pot')]
+
+        status = {
+            'created': 0,
+            'updated': 0,
+            'not_changed': 0,
+        }
+        for pot_file in pot_files:
+            path = join(local_dir, pot_file)
+            print(path)
+            results[pot_file] = self.translate_from_pot(path, status, target_langs=target_langs, src_lang=src_lang, encoding=encoding, auto_save=auto_save, compiled=compiled)
         return results
 
     def translate_all_pot(self, target_langs, src_lang='auto', encoding='utf-8', auto_save=False, compiled=False):
@@ -180,8 +223,14 @@ class PoTranslator:
         :return: Dictionary.
             A dictionary of po files.
         """
-        pot_files = [file for file in listdir(self.pot_dir) if file.endswith('.pot')]
         results = {}
+        with scandir(self.pot_dir) as it:
+            for entry in it:
+                if entry.is_dir():
+                    print(entry.name)
+                    results.update(self.translate_dir_pot(join(self.pot_dir,entry.name),target_langs,src_lang,encoding,auto_save,compiled))
+
+        pot_files = [file for file in listdir(self.pot_dir) if file.endswith('.pot')]
         status = {
             'created': 0,
             'updated': 0,
